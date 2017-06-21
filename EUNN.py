@@ -159,12 +159,12 @@ def EUNN_param(hidden_size, capacity=2, FFT=False, comp=False):
 			sin_list_0 = array_ops.concat([sin_theta_0, -sin_theta_0], 1)			
 
 
-		params_theta_1 = vs.get_variable("theta_1", [int(capacity/2), int(hidden_size/2)-1], initializer=theta_phi_initializer)
+		params_theta_1 = vs.get_variable("theta_1", [int(capacity/2), int((hidden_size-1)/2)], initializer=theta_phi_initializer)
 		cos_theta_1 = math_ops.cos(params_theta_1)
 		sin_theta_1 = math_ops.sin(params_theta_1)
 
 		if comp:
-			params_phi_1 = vs.get_variable("phi_1", [int(capacity/2), int(hidden_size/2)-1], initializer=theta_phi_initializer)
+			params_phi_1 = vs.get_variable("phi_1", [int(capacity/2), int((hidden_size-1)/2)], initializer=theta_phi_initializer)
 			cos_phi_1 = math_ops.cos(params_phi_1)
 			sin_phi_1 = math_ops.sin(params_phi_1)
 
