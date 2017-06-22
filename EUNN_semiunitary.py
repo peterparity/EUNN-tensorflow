@@ -181,7 +181,6 @@ def get_rotation_params(hidden_size, capacity, rotation_pairs_list):
 # print(get_rotation_params(20, 0, rotations))
 
 def EUNN_rect(input, dim, capacity=0, comp=False):
-
     height = dim[0]
     width = dim[1]
     assert height == int(input.get_shape()[-1])
@@ -191,7 +190,7 @@ def EUNN_rect(input, dim, capacity=0, comp=False):
 
     # if height > width, project matrix at the end
     if height > width:
-        output = array_ops.slice(EUNN_loop(input, capacity, v1, v2, ind, diag), [0, 0], dim)
+        output = array_ops.slice(EUNN_loop(input, capacity, v1, v2, ind, diag), [0, 0], [-1, width])
     # if width > height, project matrix at the beginning, i.e. equivalent to padding input
     else:
         if height == width:
