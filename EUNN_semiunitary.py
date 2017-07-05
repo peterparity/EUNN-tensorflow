@@ -21,7 +21,6 @@ def get_rotations(n, m):
         column_ind_list.append([])
 
     while True:
-        finished_columns = 0
         rotation_pairs = []
         # print(column_ind_list) # debug
 
@@ -67,7 +66,6 @@ def get_rotations_pretty(n, m):
         column_ind_list.append([])
 
     while True:
-        finished_columns = 0
         rotation_pairs = []
         # print(column_ind_list) # debug
 
