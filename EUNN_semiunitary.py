@@ -3,53 +3,8 @@ from EUNN import *
 import warnings
 from heapq import merge
 
-# generate rotation pairs to parameterize n x m semi-orthogonal matrix with input m-vector and output n-vector
-def get_rotations(n, m):
-    def pairs(x):
-        return zip(*[iter(x)]*2) # reshapes list to pairs (dropping last element if necessary)
-
-    # need to reverse order of rotations for matrices n > m
-    reverse = True
-    if n < m:
-        # otherwise, compute with swapped variables and don't reverse
-        n, m = m, n
-        reverse = False
-
-    rotation_pairs_list = []
-    column_ind_list = [range(n)] # initialize to the first column of matrix
-    for i in range(m-1):
-        column_ind_list.append([])
-
-    while True:
-        rotation_pairs = []
-        # print(column_ind_list) # debug
-
-        new_column_ind_list = [column_ind_list[0][::2]]
-        for i in range(m):
-            # appends new rotations to list if necessary
-            if len(column_ind_list[i]) > 1:
-                rotation_pairs.extend(pairs(column_ind_list[i]))
-
-                if i < m-1:
-                    # in next column i+1, adds new indexes for rotation while removing rotated indexes
-                    new_column_ind_list.append(list(merge(column_ind_list[i+1][::2], column_ind_list[i][1::2])))
-            else:
-                # if no new rotations in column i, then just append for next column i+1
-                if i < m-1:
-                    new_column_ind_list.append(column_ind_list[i+1][::2])
-
-        column_ind_list = new_column_ind_list
-        if len(rotation_pairs) > 0:
-            rotation_pairs_list.append(rotation_pairs)
-        else: # if no new rotation pairs, then we are done
-            break
-
-    if reverse:
-        rotation_pairs_list.reverse()
-    return rotation_pairs_list
-
-# generate rotation pairs to parameterize n x m semi-orthogonal matrix with input m-vector and output n-vector
-def get_rotations_pretty(n, m):
+# Generate rotation pairs to parameterize n x m semi-orthogonal matrix with input m-vector and output n-vector
+def get_rotations_pretty(n, m, use_hybrid_method=True):
     def pairs(x):
         return zip(iter(x[:int(len(x)/2)]),iter(x[int((len(x)+1)/2):])) # reshapes list to pairs (dropping last element if necessary)
 
@@ -60,10 +15,19 @@ def get_rotations_pretty(n, m):
         n, m = m, n
         reverse = False
 
-    rotation_pairs_list = []
-    column_ind_list = [range(n)] # initialize to the first column of matrix
-    for i in range(m-1):
-        column_ind_list.append([])
+    if m == 1: # don't use hybrid method for m = 1
+        use_hybrid_method = False
+
+    if use_hybrid_method:
+        rotation_pairs_list = []
+        column_ind_list = [range(m, n)] # initialize to the first column of matrix
+        for i in range(m-1):
+            column_ind_list.append([])
+    else:
+        rotation_pairs_list = []
+        column_ind_list = [range(n)] # initialize to the first column of matrix
+        for i in range(m-1):
+            column_ind_list.append([])
 
     while True:
         rotation_pairs = []
@@ -87,20 +51,64 @@ def get_rotations_pretty(n, m):
         column_ind_list = new_column_ind_list
         if len(rotation_pairs) > 0:
             rotation_pairs_list.append(rotation_pairs)
-        else: # if no new rotation pairs, then we are done
+        elif 0 not in column_ind_list[0]:
+            rotation_pairs_list.append([])
+        else: # if not in delay period and no new rotation pairs, then we are done
             break
+
+        if use_hybrid_method:
+            # instead of inserting the diagonal elements into the greedy algorithm earlier,
+            # insert them with a delay to allow the square rotations to fit better
+            current_col = len(rotation_pairs_list) - 1
+            if current_col < m:
+               column_ind_list[current_col].insert(0, current_col)
+
+    if use_hybrid_method:
+        rotation_pairs_list = add_square_rotations(rotation_pairs_list, n, m)
 
     if reverse:
         rotation_pairs_list.reverse()
     return rotation_pairs_list
 
-# # test get_rotations
-# rotations = get_rotations_pretty(32,64)
-# print(rotations)
-# print([len(pairs) for pairs in rotations])
-# # print(sum([len(pairs) for pairs in rotations]))
-# print(len(rotations))
+# Parameterizes the square part of the rectangular matrix using both row and column rotations
+def add_square_rotations(rotation_pairs_list, n, m):
+    def get_square_rotations(m):
+        def pairs(x):
+            return zip(*[x]*2) # reshapes list to pairs (dropping last element if necessary)
 
+        in_rotation_list = [pairs(iter(range(i, m))) for i in range(m-1)]
+        out_rotation_list = [pairs(reversed(range(i))) for i in reversed(range(2, m))]
+
+        return in_rotation_list, out_rotation_list
+
+    if m > 1:
+        if n > m:
+            in_rotation_list, out_rotation_list = get_square_rotations(m)
+
+            # merge square row rotations
+            for i in range(len(in_rotation_list)):
+                rotation_pairs_list[i].extend(in_rotation_list[i])
+
+            # merge square column rotations
+            capacity = len(rotation_pairs_list)
+            for i in range(len(out_rotation_list)):
+                rotation_pairs_list[capacity-1-i].extend(out_rotation_list[i])
+
+        # if matrix is square, use optimal method
+        elif n == m:
+            def pairs(x):
+                return zip(*[iter(x)]*2) # reshapes list to pairs (dropping last element if necessary)
+
+            # capacity = m
+            for i in range(m):
+                rotation_pairs_list = [pairs(range(m)), pairs(range(1,m))] * int((m+1)/2)
+                rotation_pairs_list = rotation_pairs_list[:m]
+
+
+    return rotation_pairs_list
+
+# Generates permutation ind (used in applying Givens rotations)
+# and permutation ind2 (to map cos_list, sin_list to proper locations in v1, v2)
 def permute_rotation_pairs(hidden_size, rotation_pairs):
     num_rotations = len(rotation_pairs)
 
@@ -119,7 +127,7 @@ def permute_rotation_pairs(hidden_size, rotation_pairs):
 
     return ind, ind2
 
-# generate v1, v2, ind for one disjoint set of rotation pairs, hidden_size is the larger dimension of matrix
+# Generate v1, v2, ind for one disjoint set of rotation pairs, hidden_size is the larger dimension of matrix
 def get_single_rotation_params(hidden_size, rotation_pairs, theta_phi_initializer):
     num_rotations = len(rotation_pairs)
 
@@ -138,6 +146,7 @@ def get_single_rotation_params(hidden_size, rotation_pairs, theta_phi_initialize
 
     return v1, v2, ind
 
+# Generates list of v1, v2, ind for all rotation pairs in list
 def get_rotation_params(hidden_size, capacity, rotation_pairs_list):
     if capacity == 0:
         capacity = len(rotation_pairs_list)
@@ -168,22 +177,15 @@ def get_rotation_params(hidden_size, capacity, rotation_pairs_list):
     return v1, v2, ind, diag, capacity
 
 
-# # test get params
-# rotations = [[(0, 10), (1, 11), (2, 12), (3, 13), (4, 14), (5, 15), (6, 16), (7, \
-#             17), (8, 18), (9, 19)], [(0, 5), (1, 6), (2, 7), (3, 8), (4, 9), (10, \
-#             15), (11, 16), (12, 17), (13, 18), (14, 19)], [(0, 3), (1, 4), (5, \
-#             10), (6, 11), (7, 12), (8, 13), (9, 14)], [(0, 2), (3, 7), (4, 8), \
-#             (5, 9)], [(0, 1), (2, 5), (3, 6)], [(1, 3), (2, 4)], [(1, 2)]]
-
-# # print(get_single_rotation_params(20, rotations))
-# print(get_rotation_params(20, 0, rotations))
-
-def EUNN_rect(input, dim, capacity=0, comp=False):
+# Multiplies by semi-unitary matrix using Givens rotations
+def EUNN_rect(input, dim, capacity=0, comp=False, use_hybrid_method=True):
     height = dim[0]
     width = dim[1]
     assert height == int(input.get_shape()[-1])
 
-    rotation_pairs_list = get_rotations_pretty(width, height) # height and width swapped since EUNN_loop acts on row vectors
+    # height and width swapped since EUNN_loop acts on row vectors
+    rotation_pairs_list = get_rotations_pretty(width, height, use_hybrid_method)
+
     v1, v2, ind, diag, capacity = get_rotation_params(max(dim), capacity, rotation_pairs_list)
 
     # if height > width, project matrix at the end
@@ -199,7 +201,7 @@ def EUNN_rect(input, dim, capacity=0, comp=False):
     return output
 
 # # test EUNN_rect
-# EUNN_rect(ops.convert_to_tensor(np.eye(36), dtype=tf.float32), width=32)
+# EUNN_rect(ops.convert_to_tensor(np.eye(36), dtype=tf.float32), [36, 32])
 
 # total_parameters = 0
 # for variable in tf.trainable_variables():
