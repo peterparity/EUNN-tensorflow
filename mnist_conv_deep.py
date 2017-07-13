@@ -94,18 +94,18 @@ y_ = tf.placeholder(tf.float32, shape=[None, 10])
 x_image = tf.reshape(x, [-1, 28, 28, 1])
 
 current_images = x_image
-for i in range(5):
+for i in range(4):
     maxpool = False
-    if i >= 3: maxpool = True
+    if i >= 2: maxpool = True
     current_images = conv_layer(current_images, [5, 5], 2**(i+1), "conv_" + str(i), 
                                     batch_size=50, maxpool=maxpool, full=False)
 
 # Layer 3 Fully Connected
 with tf.name_scope("full1"):
-    W_fc1 = weight_variable([7 * 7 * 32, 1024])
+    W_fc1 = weight_variable([7 * 7 * 16, 1024])
     b_fc1 = bias_variable([1024])
 
-    current_images_flat = tf.reshape(current_images, [-1, 7 * 7 * 32])
+    current_images_flat = tf.reshape(current_images, [-1, 7 * 7 * 16])
     h_fc1 = tf.nn.relu(tf.matmul(current_images_flat, W_fc1) + b_fc1)
 
 # Dropout

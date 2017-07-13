@@ -141,8 +141,8 @@ def get_single_rotation_params(hidden_size, rotation_pairs, theta_phi_initialize
 
     ind, ind2 = permute_rotation_pairs(hidden_size, rotation_pairs)
 
-    v1 = permute(cos_list, ind2)
-    v2 = permute(sin_list, ind2)
+    v1 = tf.gather(cos_list, ind2)
+    v2 = tf.gather(sin_list, ind2)
 
     return v1, v2, ind
 
@@ -176,6 +176,73 @@ def get_rotation_params(hidden_size, capacity, rotation_pairs_list):
 
     return v1, v2, ind, diag, capacity
 
+def gather_cols(params, indices, name=None):
+    """Gather columns of a 2D tensor.
+
+    Args:
+        params: A 2D tensor.
+        indices: A 1D tensor. Must be one of the following types: ``int32``, ``int64``.
+        name: A name for the operation (optional).
+
+    Returns:
+        A 2D Tensor. Has the same type as ``params``.
+    """
+    with tf.name_scope(name, "gather_cols", [params, indices]) as scope:
+        # Check input
+        params = tf.convert_to_tensor(params, name="params")
+        indices = tf.convert_to_tensor(indices, name="indices")
+        try:
+            params.get_shape().assert_has_rank(2)
+        except ValueError:
+            raise ValueError('\'params\' must be 2D.')
+        try:
+            indices.get_shape().assert_has_rank(1)
+        except ValueError:
+            raise ValueError('\'params\' must be 1D.')
+
+        # Define op
+        p_shape = tf.shape(params)
+        p_flat = tf.reshape(params, [-1])
+        i_flat = tf.reshape(tf.reshape(tf.range(0, p_shape[0]) * p_shape[1],
+                                       [-1, 1]) + indices, [-1])
+        return tf.reshape(tf.gather(p_flat, i_flat),
+                          [p_shape[0], -1])
+
+def EUNN_loop_fast(h, L, v1_list, v2_list, ind_list, D):
+
+    i = 0
+
+    def F(x, i):
+
+
+        v1 = v1_list.read(i)
+        v2 = v2_list.read(i)
+        ind = ind_list.read(i)
+
+        diag = math_ops.multiply(x, v1)
+        off = math_ops.multiply(x, v2)
+        Fx = diag + gather_cols(off, ind)
+
+        i += 1
+
+        return Fx, i
+
+    def cond(x, i):
+        return i < L
+
+    loop_vars = [h, i]
+    FFx, _ = control_flow_ops.while_loop(
+        cond, 
+        F, 
+        loop_vars
+    )
+
+    if not D == None:
+        Wx = math_ops.multiply(FFx, D)
+    else:
+        Wx = FFx
+
+    return Wx
 
 # Multiplies by semi-unitary matrix using Givens rotations
 def EUNN_rect(input, dim, capacity=0, comp=False, use_hybrid_method=True):
@@ -190,13 +257,13 @@ def EUNN_rect(input, dim, capacity=0, comp=False, use_hybrid_method=True):
 
     # if height > width, project matrix at the end
     if height > width:
-        output = array_ops.slice(EUNN_loop(input, capacity, v1, v2, ind, diag), [0, 0], [-1, width])
+        output = array_ops.slice(EUNN_loop_fast(input, capacity, v1, v2, ind, diag), [0, 0], [-1, width])
     # if width > height, project matrix at the beginning, i.e. equivalent to padding input
     else:
         if height == width:
             warnings.warn("Consider using EUNN instead of EUNN_rect for square unitary matrices.")
 
-        output = EUNN_loop(array_ops.pad(input,((0, 0), (0, width - height))), capacity, v1, v2, ind, diag)
+        output = EUNN_loop_fast(array_ops.pad(input,((0, 0), (0, width - height))), capacity, v1, v2, ind, diag)
 
     return output
 
