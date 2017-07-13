@@ -40,32 +40,33 @@ def conv2d(x, ksize, num_kernels):
 def feed_conv2d(x, ksize, num_kernels, batch_size):
     input_shape = x.get_shape().as_list()
     x_length = tf.shape(x)[0]
-    tf.assert_equal(tf.floormod(x_length, batch_size), 0)
-    x = toTensorArray(x)
 
-    output = tf.TensorArray(dtype=x.dtype, 
-                            size=x_length/batch_size,
-                            dynamic_size=False,
-                            infer_shape=True)
+    with tf.control_dependencies([tf.assert_equal(tf.floormod(x_length, batch_size), 0)]):
+        x = toTensorArray(x)
 
-    i = 0
+        output = tf.TensorArray(dtype=x.dtype, 
+                                size=x_length/batch_size,
+                                dynamic_size=False,
+                                infer_shape=True)
 
-    def feed(output, i):
-        current_batch = tf.stack([x.read(i * batch_size + j) for j in range(batch_size)])
-        output = output.write(i, conv2d(current_batch, ksize, num_kernels))
-        i += 1
+        i = 0
 
-        return output, i
+        def feed(output, i):
+            current_batch = tf.stack([x.read(i * batch_size + j) for j in range(batch_size)])
+            output = output.write(i, conv2d(current_batch, ksize, num_kernels))
+            i += 1
 
-    def cond(output, i):
-        return tf.less(i, x_length/batch_size)
+            return output, i
 
-    loop_vars = [output, i]
-    output, _ = tf.while_loop(
-        cond, 
-        feed, 
-        loop_vars
-    )
+        def cond(output, i):
+            return tf.less(i, x_length/batch_size)
+
+        loop_vars = [output, i]
+        output, _ = tf.while_loop(
+            cond, 
+            feed, 
+            loop_vars
+        )
 
     return tf.reshape(output.stack(), [-1] + input_shape[1:3] + [num_kernels])
 
@@ -93,13 +94,10 @@ y_ = tf.placeholder(tf.float32, shape=[None, 10])
 x_image = tf.reshape(x, [-1, 28, 28, 1])
 
 current_images = x_image
-# for i in range(4):
-#     maxpool = False
-#     current_images = conv_layer(current_images, [5, 5], 2, 50, "conv1_" + str(i), maxpool)
 for i in range(5):
     maxpool = False
     if i >= 3: maxpool = True
-    current_images = conv_layer(current_images, [5, 5], 2**(i+1), "conv2_" + str(i), 
+    current_images = conv_layer(current_images, [5, 5], 2**(i+1), "conv_" + str(i), 
                                     batch_size=50, maxpool=maxpool, full=False)
 
 # Layer 3 Fully Connected
