@@ -208,7 +208,7 @@ def gather_cols(params, indices, name=None):
         return tf.reshape(tf.gather(p_flat, i_flat),
                           [p_shape[0], -1])
 
-def EUNN_loop_fast(h, L, v1_list, v2_list, ind_list, D):
+def EUNN_loop_gather_cols(h, L, v1_list, v2_list, ind_list, D):
 
     i = 0
 
@@ -245,7 +245,7 @@ def EUNN_loop_fast(h, L, v1_list, v2_list, ind_list, D):
     return Wx
 
 # Multiplies by semi-unitary matrix using Givens rotations
-def EUNN_rect(input, dim, capacity=0, comp=False, use_hybrid_method=True):
+def EUNN_rect(input, dim, capacity=0, comp=False, use_hybrid_method=True, use_gather_cols=False):
     height = dim[0]
     width = dim[1]
     assert height == int(input.get_shape()[-1])
@@ -257,13 +257,20 @@ def EUNN_rect(input, dim, capacity=0, comp=False, use_hybrid_method=True):
 
     # if height > width, project matrix at the end
     if height > width:
-        output = array_ops.slice(EUNN_loop_fast(input, capacity, v1, v2, ind, diag), [0, 0], [-1, width])
+        if use_gather_cols:
+            output = array_ops.slice(EUNN_loop_gather_cols(input, capacity, v1, v2, ind, diag), [0, 0], [-1, width])
+        else:
+            output = array_ops.slice(EUNN_loop(input, capacity, v1, v2, ind, diag), [0, 0], [-1, width])
+
     # if width > height, project matrix at the beginning, i.e. equivalent to padding input
     else:
         if height == width:
             warnings.warn("Consider using EUNN instead of EUNN_rect for square unitary matrices.")
 
-        output = EUNN_loop_fast(array_ops.pad(input,((0, 0), (0, width - height))), capacity, v1, v2, ind, diag)
+        if use_gather_cols:
+            output = EUNN_loop_gather_cols(array_ops.pad(input,((0, 0), (0, width - height))), capacity, v1, v2, ind, diag)
+        else:
+            output = EUNN_loop(array_ops.pad(input,((0, 0), (0, width - height))), capacity, v1, v2, ind, diag)
 
     return output
 

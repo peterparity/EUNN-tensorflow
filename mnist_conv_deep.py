@@ -5,6 +5,8 @@ mnist = input_data.read_data_sets("MNIST_data/", one_hot=True)
 
 from EUNN_semiunitary import *
 
+from tensorflow.python.client import timeline
+
 # sess = tf.InteractiveSession()
 
 def weight_variable(shape):
@@ -32,7 +34,9 @@ def conv2d(x, ksize, num_kernels):
     #                                             [ksize[0], ksize[1], depth, ksize[0] * ksize[1] * depth]),
     #                                             strides=[1, 1, 1, 1], padding='SAME')
     output = EUNN_rect(tf.reshape(image_patches, [-1, ksize[0] * ksize[1] * depth]),
-                                    [ksize[0] * ksize[1] * depth, num_kernels], use_hybrid_method=True)
+                        [ksize[0] * ksize[1] * depth, num_kernels],
+                        use_hybrid_method=True,
+                        use_gather_cols=True)
 
     # return tf.reshape(output, [-1] + input_shape[1:3] + [num_kernels])
     return output
@@ -132,22 +136,35 @@ with tf.name_scope("accuracy"):
 # config = tf.ConfigProto()
 # config.gpu_options.allow_growth = True
 # sess = tf.Session(config=config)
-sess = tf.Session()
-sess.run(tf.global_variables_initializer())
+with tf.Session() as sess:
+    sess.run(tf.global_variables_initializer())
 
-# writer = tf.summary.FileWriter("/Users/peter/Dropbox (MIT)/Soljacic/semiunitaryConvNet/tmp/1")
-# writer.add_graph(sess.graph)
+    # writer = tf.summary.FileWriter("/Users/peter/Dropbox (MIT)/Soljacic/semiunitaryConvNet/tmp/1")
+    # writer.add_graph(sess.graph)
 
-# Run Training
-for i in range(12000):
-    batch = mnist.train.next_batch(50)
-    if i%50 == 0:
-        train_accuracy = sess.run(accuracy, feed_dict={x:batch[0], y_: batch[1], keep_prob: 1.0})
-        print("step %d, training accuracy %g"%(i, train_accuracy))
-    # print(sess.run(tf.shape(x_image), feed_dict={x: batch[0], y_: batch[1], keep_prob: 0.5}))
-    sess.run(train_step, feed_dict={x: batch[0], y_: batch[1], keep_prob: 0.5})
+    options = tf.RunOptions(trace_level=tf.RunOptions.FULL_TRACE)
+    run_metadata = tf.RunMetadata()
 
-print("test accuracy %g"%sess.run(accuracy, feed_dict={x: mnist.test.images, y_: mnist.test.labels, keep_prob: 1.0}))
+    # Run Training
+    for i in range(12000):
+        batch = mnist.train.next_batch(50)
+
+        if i%50 == 0:
+            train_accuracy = sess.run(accuracy, feed_dict={x:batch[0], y_: batch[1], keep_prob: 1.0})
+            print("step %d, training accuracy %g"%(i, train_accuracy))
+
+        # sess.run(train_step, feed_dict={x: batch[0], y_: batch[1], keep_prob: 0.5})
+        sess.run(train_step,
+                feed_dict={x: batch[0], y_: batch[1], keep_prob: 0.5},
+                options=options,
+                run_metadata=run_metadata)
+
+        fetched_timeline = timeline.Timeline(run_metadata.step_stats)
+        chrome_trace = fetched_timeline.generate_chrome_trace_format()
+        with open('timeline_step_%d.json' % i, 'w') as f:
+            f.write(chrome_trace)
+
+    print("test accuracy %g"%sess.run(accuracy, feed_dict={x: mnist.test.images, y_: mnist.test.labels, keep_prob: 1.0}))
 
 
 
