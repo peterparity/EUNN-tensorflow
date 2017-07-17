@@ -107,44 +107,37 @@ def add_square_rotations(rotation_pairs_list, n, m):
 
     return rotation_pairs_list
 
-# Generates permutation ind (used in applying Givens rotations)
-# and permutation ind2 (to map cos_list, sin_list to proper locations in v1, v2)
-def permute_rotation_pairs(hidden_size, rotation_pairs):
-    num_rotations = len(rotation_pairs)
+# Collect all indices (ind_list) for the permutations in the EUNN loop
+# and generate indices (ind2_list) to initially extract rotation parameters cos/sin theta
+# in the correct order for all rotation pairs (indices for tf.gather_nd)
+def permute_rotation_pairs_list(hidden_size, capacity, total_num_rotations, rotation_pairs_list):
+    ind_list = []
+    ind2_list = []
+    ind1 = list(range(2*total_num_rotations, capacity*hidden_size)) # used to fill in indices not used for a rotation
 
-    ind = list(range(hidden_size))
-    ind1 = list(range(2*num_rotations, hidden_size))
-    ind2 = [-1] * hidden_size
-    
-    for i in range(num_rotations):
-        ind[rotation_pairs[i][0]], ind[rotation_pairs[i][1]] = ind[rotation_pairs[i][1]], ind[rotation_pairs[i][0]]
-        ind2[rotation_pairs[i][0]] = i
-        ind2[rotation_pairs[i][1]] = i + num_rotations
+    for j in range(capacity):
+        # Initializing indices
+        ind = list(range(hidden_size))
+        ind2 = [[-1] for k in range(hidden_size)]
+        
+        rotation_pairs = rotation_pairs_list[j]
+        for i in range(len(rotation_pairs)):
+            # Computing indices for a particular rotation pair
+            ind[rotation_pairs[i][0]], ind[rotation_pairs[i][1]] = ind[rotation_pairs[i][1]], ind[rotation_pairs[i][0]]
+            ind2[rotation_pairs[i][0]][0] = i
+            ind2[rotation_pairs[i][1]][0] = i + total_num_rotations
 
-    for i in range(hidden_size):
-        if ind2[i] == -1:
-            ind2[i] = ind1.pop()
+        # Appending to index lists
+        ind_list.append(ind)
+        ind2_list.append(ind2)
 
-    return ind, ind2
+    # Filling in indices not used for rotations
+    for j in range(capacity):
+        for i in range(hidden_size):
+            if ind2_list[j][i][0] == -1:
+                ind2_list[j][i][0] = ind1.pop()
 
-# Generate v1, v2, ind for one disjoint set of rotation pairs, hidden_size is the larger dimension of matrix
-def get_single_rotation_params(hidden_size, rotation_pairs, theta_phi_initializer):
-    num_rotations = len(rotation_pairs)
-
-    params_theta = vs.get_variable("theta", num_rotations, initializer=theta_phi_initializer)
-
-    cos_theta = math_ops.cos(params_theta)
-    sin_theta = math_ops.sin(params_theta)
-
-    cos_list = array_ops.concat([cos_theta, cos_theta, np.ones(hidden_size-2*num_rotations)], 0)
-    sin_list = array_ops.concat([sin_theta, -sin_theta, np.zeros(hidden_size-2*num_rotations)], 0)
-
-    ind, ind2 = permute_rotation_pairs(hidden_size, rotation_pairs)
-
-    v1 = tf.gather(cos_list, ind2)
-    v2 = tf.gather(sin_list, ind2)
-
-    return v1, v2, ind
+    return ind_list, ind2_list
 
 # Generates list of v1, v2, ind for all rotation pairs in list
 def get_rotation_params(hidden_size, capacity, rotation_pairs_list):
@@ -156,25 +149,29 @@ def get_rotation_params(hidden_size, capacity, rotation_pairs_list):
     theta_phi_initializer = init_ops.random_uniform_initializer(-np.pi, np.pi)
     # theta_phi_initializer = init_ops.random_normal_initializer(0,0.1)
 
-    v1 = []
-    v2 = []
-    ind = []
+    total_num_rotations = sum([len(rotation_pairs) for rotation_pairs in rotation_pairs_list])
 
-    for i in range(capacity):
-        with tf.variable_scope(str(i)):
-            v1_tmp, v2_tmp, ind_tmp = \
-                get_single_rotation_params(hidden_size, rotation_pairs_list[i], theta_phi_initializer)
-        v1.append(v1_tmp)
-        v2.append(v2_tmp)
-        ind.append(ind_tmp)
+    params_theta = vs.get_variable("theta", total_num_rotations, initializer=theta_phi_initializer)
 
-    v1 = toTensorArray(v1)
-    v2 = toTensorArray(v2)
-    ind = toTensorArray(np.array(ind).astype(np.int32))
+    cos_theta = math_ops.cos(params_theta)
+    sin_theta = math_ops.sin(params_theta)
+
+    cos_list = array_ops.concat([cos_theta, cos_theta, np.ones(capacity*hidden_size-2*total_num_rotations)], 0)
+    sin_list = array_ops.concat([sin_theta, -sin_theta, np.zeros(capacity*hidden_size-2*total_num_rotations)], 0)
+
+    ind_list, ind2_list = permute_rotation_pairs_list(hidden_size, capacity, total_num_rotations, rotation_pairs_list)
+
+    # print(ind2_list)
+    v1_list = tf.gather_nd(cos_list, ind2_list)
+    v2_list = tf.gather_nd(sin_list, ind2_list)
+
+    v1_list = toTensorArray(v1_list)
+    v2_list = toTensorArray(v2_list)
+    ind_list = toTensorArray(np.array(ind_list).astype(np.int32))
 
     diag = None
 
-    return v1, v2, ind, diag, capacity
+    return v1_list, v2_list, ind_list, diag, capacity
 
 def gather_cols(params, indices, name=None):
     """Gather columns of a 2D tensor.

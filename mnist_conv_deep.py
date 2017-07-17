@@ -36,7 +36,7 @@ def conv2d(x, ksize, num_kernels):
     output = EUNN_rect(tf.reshape(image_patches, [-1, ksize[0] * ksize[1] * depth]),
                         [ksize[0] * ksize[1] * depth, num_kernels],
                         use_hybrid_method=True,
-                        use_gather_cols=True)
+                        use_gather_cols=False)
 
     # return tf.reshape(output, [-1] + input_shape[1:3] + [num_kernels])
     return output
